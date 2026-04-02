@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>反應力訓練 Pro - PWA 版</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2c3e50">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --bg-idle: #2c3e50;
+            --bg-waiting: #e74c3c;
+            --bg-action: #2ecc71;
+            --bg-error: #f39c12;
+            --text-color: #ecf0f1;
+        }
+
+        body, html {
+            margin: 0; padding: 0; height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #1a1a1a; color: var(--text-color);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* 遊戲點擊區域 */
+        #game-area {
+            flex: 1;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            cursor: pointer; transition: background-color 0.1s;
+            user-select: none; -webkit-user-select: none;
+            text-align: center;
+        }
+
+        .idle { background-color: var(--bg-idle); }
+        .waiting { background-color: var(--bg-waiting); }
+        .action { background-color: var(--bg-action); }
+        .error { background-color: var(--bg-error); }
+
+        h1 { font-size: 3.5rem; margin: 0; pointer-events: none; }
+        p { font-size: 1.2rem; opacity: 0.8; pointer-events: none; }
+
+        /* 下方數據面板 */
+        #dashboard {
+            height: 280px; background: #222;
+            display: grid; grid-template-columns: 1fr 2fr;
+            gap: 15px; padding: 15px; box-sizing: border-box;
+            border-top: 1px solid #444;
+        }
+
+        .stats-column {
+            display: flex; flex-direction: column; gap: 10px;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            padding: 12px; border-radius: 8px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        .stat-label { font-size: 0.8rem; color: #95a5a6; }
+        .stat-value { font-size: 1.4rem; font-weight: bold; color: #f1c40f; }
+
+        .chart-container {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px; padding: 10px;
+            position: relative;
+        }
+
+        button {
+            background: #c0392b; color: white; border: none;
+            padding: 8px; border-radius: 4px; cursor: pointer;
+            font-size: 0.8rem; margin-top: auto;
+        }
+
+        /* 手機版適應 */
+        @media (max-width: 600px) {
+            #dashboard { grid-template-columns: 1fr; height: 350px; overflow-y: auto; }
+            h1 { font-size: 2.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-area" class="idle">
+        <h1 id="main-text">點擊開始</h1>
+        <p id="sub-text">看到綠色瞬間點擊</p>
+    </div>
+
+    <div id="dashboard">
+        <div class="stats-column">
+            <div class="stat-card">
+                <span class="stat-label">最佳</span>
+                <span id="best-val" class="stat-value">--</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">平均(10次)</span>
+                <span id="avg-val" class="stat-value">--</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">等級</span>
+                <span id="rank-val" style="font-weight:bold; color:#2ecc71">--</span>
+            </div>
+            <button id="btn-clear">清除所有紀錄</button>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="reactionChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const area = document.getElementById('game-area');
+        const mainText = document.getElementById('main-text');
+        const subText = document.getElementById('sub-text');
+        const bestEl = document.getElementById('best-val');
+        const avgEl = document.getElementById('avg-val');
+        const rankEl = document.getElementById('rank-val');
+        const clearBtn = document.getElementById('btn-clear');
+
+        let state = 'idle';
+        let timer, startTime;
+        let records = JSON.parse(localStorage.getItem('reaction_pwa_data')) || [];
+        let chart;
+
+        // 初始化
+        initChart();
+        updateUI();
+
+        // 事件監聽
+        area.addEventListener('mousedown', handleInteraction);
+        area.addEventListener('touchstart', (e) => { e.preventDefault(); handleInteraction(); });
+
+        function handleInteraction() {
+            if (state === 'idle' || state === 'result') {
+                startWaiting();
+            } else if (state === 'waiting') {
+                fail();
+            } else if (state === 'action') {
+                success();
+            }
+        }
+
+        function startWaiting() {
+            state = 'waiting';
+            area.className = 'waiting';
+            mainText.innerText = '等候變色...';
+            subText.innerText = '不要分心！';
+            
+            const delay = Math.random() * 3000 + 2000;
+            timer = setTimeout(() => {
+                state = 'action';
+                area.className = 'action';
+                mainText.innerText = '點擊！';
+                startTime = performance.now();
+            }, delay);
+        }
+
+        function fail() {
+            clearTimeout(timer);
+            state = 'result';
+            area.className = 'error';
+            mainText.innerText = '太早了！';
+            subText.innerText = '請等變色後再點擊';
+        }
+
+        function success() {
+            const duration = Math.round(performance.now() - startTime);
+            state = 'result';
+            area.className = 'idle';
+            mainText.innerText = `${duration} ms`;
+            subText.innerText = '點擊重試';
+
+            records.push(duration);
+            if (records.length > 10) records.shift();
+            localStorage.setItem('reaction_pwa_data', JSON.stringify(records));
+            updateUI();
+        }
+
+        function getRank(time) {
+            if (time < 200) return '神速';
+            if (time < 250) return '敏捷';
+            if (time < 300) return '正常';
+            return '遲緩';
+        }
+
+        function updateUI() {
+            if (records.length === 0) return;
+
+            const best = Math.min(...records);
+            const avg = Math.round(records.reduce((a, b) => a + b) / records.length);
+            
+            bestEl.innerText = `${best}ms`;
+            avgEl.innerText = `${avg}ms`;
+            rankEl.innerText = getRank(avg);
+
+            chart.data.labels = records.map((_, i) => i + 1);
+            chart.data.datasets[0].data = records;
+            chart.update();
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('reactionChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '反應時間',
+                        data: [],
+                        borderColor: '#2ecc71',
+                        tension: 0.4,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#888' }, grid: { color: '#333' } },
+                        x: { display: false }
+                    }
+                }
+            });
+        }
+
+        clearBtn.onclick = (e) => {
+            e.stopPropagation();
+            if(confirm('確定清除？')) {
+                records = [];
+                localStorage.removeItem('reaction_pwa_data');
+                location.reload();
+            }
+        };
+
+        // Service Worker 註冊
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(() => {});
+            });
+        }
+    </script>
+</body>
+</html>
